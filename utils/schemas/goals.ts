@@ -19,4 +19,5 @@ export const DailyGoalResponseSchema = DailyGoalSchema.extend({
 });
 
 export type DailyGoal = z.infer<typeof DailyGoalSchema>;
+export type DailyGoalInput = z.input<typeof DailyGoalSchema>;
 export type DailyGoalResponse = z.infer<typeof DailyGoalResponseSchema>;

@@ -1,7 +1,7 @@
 "use client";
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { DailyGoal, DailyGoalSchema, GoalType } from "../../../utils/schemas/goals";
+import { DailyGoal, DailyGoalInput, DailyGoalSchema, GoalType } from "../../../utils/schemas/goals";
 import { useDailyGoals, useUpdateDailyGoals } from "@/app/hooks/useGoals";
 import {
   Dialog,
@@ -33,7 +33,7 @@ export function DailyGoalsModal({
     setValue,
     control,
     formState: { errors },
-  } = useForm<DailyGoal>({
+  } = useForm<DailyGoalInput, unknown, DailyGoal>({
     resolver: zodResolver(DailyGoalSchema),
     values: goals
       ? {
