@@ -608,12 +608,12 @@ export function getAgentTools(userId: string, options?: { defaultImageUrl?: stri
       description: "Оновлює цілі харчування користувача (калорії, підтримку, БЖВ).",
       inputSchema: z.object({
         goalType: z.enum(["WEIGHT_LOSS", "MUSCLE_GAIN", "MAINTENANCE"]).optional().describe("WEIGHT_LOSS | MUSCLE_GAIN | MAINTENANCE"),
-        calories: z.number().optional().describe("Цільові калорії"),
-        maintenanceCalories: z.number().optional().describe("Калорії підтримки"),
-        protein: z.number().optional().describe("Білки (г)"),
-        fat: z.number().optional().describe("Жири (г)"),
-        carbs: z.number().optional().describe("Вуглеводи (г)"),
-        fiber: z.number().optional().describe("Клітковина (г)"),
+        calories: z.coerce.number().optional().describe("Цільові калорії"),
+        maintenanceCalories: z.coerce.number().optional().describe("Калорії підтримки"),
+        protein: z.coerce.number().optional().describe("Білки (г)"),
+        fat: z.coerce.number().optional().describe("Жири (г)"),
+        carbs: z.coerce.number().optional().describe("Вуглеводи (г)"),
+        fiber: z.coerce.number().optional().describe("Клітковина (г)"),
       }),
       execute: async (args: {
         goalType?: "WEIGHT_LOSS" | "MUSCLE_GAIN" | "MAINTENANCE";

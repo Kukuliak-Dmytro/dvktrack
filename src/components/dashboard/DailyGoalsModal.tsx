@@ -93,7 +93,7 @@ export function DailyGoalsModal({
             <div className="grid grid-cols-3 gap-2">
               <button
                 type="button"
-                onClick={() => setValue("goalType", "WEIGHT_LOSS")}
+                onClick={() => setValue("goalType", "WEIGHT_LOSS", { shouldDirty: true, shouldValidate: true })}
                 className={`flex flex-col items-center justify-center p-2.5 rounded-xl border text-xs font-semibold transition-all ${
                   selectedGoalType === "WEIGHT_LOSS"
                     ? "bg-primary/10 border-primary text-primary shadow-xs ring-1 ring-primary"
@@ -106,7 +106,7 @@ export function DailyGoalsModal({
 
               <button
                 type="button"
-                onClick={() => setValue("goalType", "MUSCLE_GAIN")}
+                onClick={() => setValue("goalType", "MUSCLE_GAIN", { shouldDirty: true, shouldValidate: true })}
                 className={`flex flex-col items-center justify-center p-2.5 rounded-xl border text-xs font-semibold transition-all ${
                   selectedGoalType === "MUSCLE_GAIN"
                     ? "bg-primary/10 border-primary text-primary shadow-xs ring-1 ring-primary"
@@ -119,7 +119,7 @@ export function DailyGoalsModal({
 
               <button
                 type="button"
-                onClick={() => setValue("goalType", "MAINTENANCE")}
+                onClick={() => setValue("goalType", "MAINTENANCE", { shouldDirty: true, shouldValidate: true })}
                 className={`flex flex-col items-center justify-center p-2.5 rounded-xl border text-xs font-semibold transition-all ${
                   selectedGoalType === "MAINTENANCE"
                     ? "bg-primary/10 border-primary text-primary shadow-xs ring-1 ring-primary"
