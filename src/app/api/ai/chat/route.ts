@@ -208,7 +208,7 @@ export async function POST(req: NextRequest) {
       messages: modelMessages,
       tools,
       temperature: 0.1,
-      stopWhen: isStepCount(6),
+      stopWhen: isStepCount(15),
       prepareStep: ({ stepNumber, steps }) => {
         if (steps.length > 0) {
           const allExecutedTools = steps.flatMap(
@@ -218,9 +218,9 @@ export async function POST(req: NextRequest) {
             ZERO_ARG_TOOLS.has(name)
           );
 
-          // If duplicate call was detected, or near step limit (stepNumber >= 5 out of 6),
+          // If duplicate call was detected, or near step limit (stepNumber >= 14 out of 15),
           // force toolChoice to "none" and clear activeTools so model produces final text response.
-          if (hadConsecutiveDuplicate || stepNumber >= 5) {
+          if (hadConsecutiveDuplicate || stepNumber >= 14) {
             return { toolChoice: "none", activeTools: [] };
           }
 
