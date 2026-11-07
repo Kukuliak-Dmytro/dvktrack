@@ -80,30 +80,37 @@ export function AIChatSidebar({ isOpen, onClose }: AIChatSidebarProps) {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isOpen, onClose]);
 
-  const handleSend = async (textToSend: string, imageFile?: File | null) => {
+  const handleSend = async (textToSend: string, imageFiles?: File[]) => {
     const trimmed = textToSend.trim();
-    if ((!trimmed && !imageFile) || isGenerating) return;
+    if ((!trimmed && (!imageFiles || imageFiles.length === 0)) || isGenerating) return;
 
-    let uploadedUrl: string | undefined;
-    let uploadedDataUrl: string | undefined;
+    const uploadedUrls: string[] = [];
+    const uploadedDataUrls: string[] = [];
 
-    if (imageFile) {
+    if (imageFiles && imageFiles.length > 0) {
       try {
-        const formData = new FormData();
-        formData.append("file", imageFile);
-        const res = await fetch("/api/storage/upload", {
-          method: "POST",
-          body: formData,
+        const uploadPromises = imageFiles.map(async (file) => {
+          const formData = new FormData();
+          formData.append("file", file);
+          const res = await fetch("/api/storage/upload", {
+            method: "POST",
+            body: formData,
+          });
+
+          if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            throw new Error(errData.error || `Не вдалося завантажити ${file.name}`);
+          }
+
+          const data = await res.json();
+          return { url: data.url as string, dataUrl: data.dataUrl as string };
         });
 
-        if (!res.ok) {
-          const errData = await res.json().catch(() => ({}));
-          throw new Error(errData.error || "Не вдалося завантажити фото");
-        }
-
-        const data = await res.json();
-        uploadedUrl = data.url;
-        uploadedDataUrl = data.dataUrl;
+        const results = await Promise.all(uploadPromises);
+        results.forEach((r) => {
+          if (r.url) uploadedUrls.push(r.url);
+          if (r.dataUrl) uploadedDataUrls.push(r.dataUrl);
+        });
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : "Помилка завантаження фото";
         toast.error(msg);
@@ -112,17 +119,30 @@ export function AIChatSidebar({ isOpen, onClose }: AIChatSidebarProps) {
     }
 
     const messageText =
-      trimmed || (uploadedUrl ? "Проаналізуй це фото страви та запиши її в щоденник." : "");
+      trimmed ||
+      (uploadedUrls.length > 0
+        ? uploadedUrls.length === 1
+          ? "Проаналізуй це фото страви та запиши її в щоденник."
+          : `Проаналізуй ці ${uploadedUrls.length} фото страв та запиши їх у щоденник.`
+        : "");
 
     await sendMessage(
       {
         text: messageText,
-        metadata: uploadedUrl ? { imageUrl: uploadedUrl } : undefined,
+        metadata:
+          uploadedUrls.length > 0
+            ? {
+                imageUrl: uploadedUrls.length === 1 ? uploadedUrls[0] : JSON.stringify(uploadedUrls),
+                imageUrls: uploadedUrls,
+              }
+            : undefined,
       },
       {
         body: {
-          imageUrl: uploadedUrl,
-          imageDataUrl: uploadedDataUrl,
+          imageUrl: uploadedUrls[0],
+          imageUrls: uploadedUrls,
+          imageDataUrl: uploadedDataUrls[0],
+          imageDataUrls: uploadedDataUrls,
         },
       }
     );
@@ -211,7 +231,7 @@ export function AIChatSidebar({ isOpen, onClose }: AIChatSidebarProps) {
                   <button
                     key={idx}
                     type="button"
-                    onClick={() => handleSend(qp.prompt, null)}
+                    onClick={() => handleSend(qp.prompt, [])}
                     className="group flex items-center justify-between rounded-xl border border-border/70 bg-card p-2.5 text-xs text-foreground transition-all hover:border-primary/50 hover:bg-muted/40">
                     <span className="font-medium">{qp.label}</span>
                     <span className="text-[11px] text-muted-foreground truncate max-w-[240px] group-hover:text-foreground">

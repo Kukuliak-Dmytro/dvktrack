@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { messages, sessionId, currentDate, imageDataUrl, imageUrl } = body;
+    const { messages, sessionId, currentDate, imageDataUrl, imageUrl, imageUrls, imageDataUrls } = body;
 
     if (!Array.isArray(messages) || messages.length === 0) {
       return new Response(JSON.stringify({ error: "Messages array is required" }), {
@@ -33,6 +33,19 @@ export async function POST(req: NextRequest) {
         headers: { "Content-Type": "application/json" },
       });
     }
+
+    // Resolve all image URLs provided
+    const allImageUrls: string[] = Array.isArray(imageUrls)
+      ? imageUrls.filter((u): u is string => typeof u === "string" && u.trim().length > 0)
+      : typeof imageUrl === "string" && imageUrl.trim().length > 0
+      ? [imageUrl.trim()]
+      : [];
+
+    const allImageDataUrls: string[] = Array.isArray(imageDataUrls)
+      ? imageDataUrls.filter((d): d is string => typeof d === "string" && d.startsWith("data:image/"))
+      : typeof imageDataUrl === "string" && imageDataUrl.startsWith("data:image/")
+      ? [imageDataUrl]
+      : [];
 
     // 1. Resolve or create chat session
     let activeSession = null;
@@ -72,18 +85,19 @@ export async function POST(req: NextRequest) {
     // 2. Persist latest incoming user message
     const latestUserMessage = [...messages].reverse().find((m: { role: string }) => m.role === "user");
     const latestUserText = extractText(latestUserMessage);
-    const activeImageUrl =
-      (typeof imageUrl === "string" && imageUrl.trim()) ||
-      (latestUserMessage as Record<string, unknown> | undefined)?.imageUrl ||
-      null;
 
-    if (latestUserText || activeImageUrl) {
+    const storedImageUrl =
+      allImageUrls.length > 1
+        ? JSON.stringify(allImageUrls)
+        : allImageUrls[0] || null;
+
+    if (latestUserText || allImageUrls.length > 0) {
       await prisma.chatMessage.create({
         data: {
           sessionId: currentSessionId,
           role: "user",
           content: latestUserText || "Аналіз фотографії страви",
-          imageUrl: typeof activeImageUrl === "string" ? activeImageUrl : null,
+          imageUrl: storedImageUrl,
         },
       });
     }
@@ -92,23 +106,23 @@ export async function POST(req: NextRequest) {
     aiLogger.logInput({
       sessionId: currentSessionId,
       userId,
-      userMessage: latestUserText || (activeImageUrl ? "[Зображення]" : ""),
+      userMessage: latestUserText || (allImageUrls.length > 0 ? `[${allImageUrls.length} зображень]` : ""),
       totalMessages: messages.length,
     });
 
     // 3. Setup agent tools and system prompt
     const rawTools = getAgentTools(userId, {
-      defaultImageUrl: typeof activeImageUrl === "string" ? activeImageUrl : null,
+      defaultImageUrl: allImageUrls[0] || null,
     });
     const systemPrompt = buildSystemPrompt({
       currentDate,
-      hasAttachedImage: Boolean(activeImageUrl || imageDataUrl),
+      hasAttachedImage: allImageUrls.length > 0 || allImageDataUrls.length > 0,
     });
     const model = getLLMModel();
     const modelMessages = await convertToModelMessages(messages);
 
-    // If an image was attached in this turn, inject it into the latest user modelMessage
-    if (typeof imageDataUrl === "string" && imageDataUrl.startsWith("data:image/")) {
+    // If images were attached in this turn, inject them into the latest user modelMessage
+    if (allImageDataUrls.length > 0) {
       const lastUserIndex = modelMessages.findLastIndex((m) => m.role === "user");
       if (lastUserIndex !== -1 && modelMessages[lastUserIndex].role === "user") {
         const userMsg = modelMessages[lastUserIndex];
@@ -116,12 +130,14 @@ export async function POST(req: NextRequest) {
           ? userMsg.content
           : [{ type: "text" as const, text: String(userMsg.content || "") }];
 
+        const imageParts = allImageDataUrls.map((dataUri) => ({
+          type: "image" as const,
+          image: new URL(dataUri),
+        }));
+
         (userMsg as { content: unknown }).content = [
           ...existingContent,
-          {
-            type: "image",
-            image: new URL(imageDataUrl),
-          },
+          ...imageParts,
         ];
       }
     }
