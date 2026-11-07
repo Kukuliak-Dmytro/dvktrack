@@ -2,7 +2,7 @@
 
 import React, { useRef, useEffect, useState } from "react";
 import { useChat } from "@ai-sdk/react";
-import { DefaultChatTransport } from "ai";
+import { DefaultChatTransport, type UIMessage } from "ai";
 import { useQueryClient } from "@tanstack/react-query";
 import { Sparkles, X, RotateCcw, Bot } from "lucide-react";
 import { toast } from "sonner";
@@ -28,6 +28,13 @@ export function AIChatSidebar({ isOpen, onClose }: AIChatSidebarProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [messageImages, setMessageImages] = useState<Record<string, string>>({});
+
+  // Optimistic message to eliminate perceived latency on sending
+  const [optimisticPending, setOptimisticPending] = useState<{
+    id: string;
+    text: string;
+    imageUrls: string[];
+  } | null>(null);
 
   const [modelInfo, setModelInfo] = useState<{ displayName: string; isCloud: boolean }>({
     displayName: "Gemini 3.5 Flash",
@@ -62,12 +69,12 @@ export function AIChatSidebar({ isOpen, onClose }: AIChatSidebarProps) {
       .catch(() => {});
   }, []);
 
-  // Auto-scroll to bottom on new message
+  // Auto-scroll to bottom on new message or optimistic message
   useEffect(() => {
     if (isOpen) {
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
-  }, [messages, isOpen]);
+  }, [messages, optimisticPending, isOpen]);
 
   // Handle ESC key to close
   useEffect(() => {
@@ -80,15 +87,30 @@ export function AIChatSidebar({ isOpen, onClose }: AIChatSidebarProps) {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isOpen, onClose]);
 
-  const handleSend = async (textToSend: string, imageFiles?: File[]) => {
+  const handleSend = async (textToSend: string, imageFiles?: File[], previewUrls?: string[]) => {
     const trimmed = textToSend.trim();
-    if ((!trimmed && (!imageFiles || imageFiles.length === 0)) || isGenerating) return;
+    if ((!trimmed && (!imageFiles || imageFiles.length === 0)) || isGenerating || optimisticPending) return;
+
+    const optimisticDisplay =
+      trimmed ||
+      (imageFiles && imageFiles.length > 0
+        ? imageFiles.length === 1
+          ? "Аналіз фотографії страви"
+          : `Аналіз ${imageFiles.length} фотографій страв`
+        : "");
+
+    // 0ms Optimistic feedback: Transition screen and render user message immediately
+    setOptimisticPending({
+      id: `opt-${Date.now()}`,
+      text: optimisticDisplay,
+      imageUrls: previewUrls || [],
+    });
 
     const uploadedUrls: string[] = [];
     const uploadedDataUrls: string[] = [];
 
-    if (imageFiles && imageFiles.length > 0) {
-      try {
+    try {
+      if (imageFiles && imageFiles.length > 0) {
         const uploadPromises = imageFiles.map(async (file) => {
           const formData = new FormData();
           formData.append("file", file);
@@ -111,48 +133,52 @@ export function AIChatSidebar({ isOpen, onClose }: AIChatSidebarProps) {
           if (r.url) uploadedUrls.push(r.url);
           if (r.dataUrl) uploadedDataUrls.push(r.dataUrl);
         });
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : "Помилка завантаження фото";
-        toast.error(msg);
-        return;
       }
-    }
 
-    const messageText =
-      trimmed ||
-      (uploadedUrls.length > 0
-        ? uploadedUrls.length === 1
-          ? "Проаналізуй це фото страви та запиши її в щоденник."
-          : `Проаналізуй ці ${uploadedUrls.length} фото страв та запиши їх у щоденник.`
-        : "");
+      const messageText =
+        trimmed ||
+        (uploadedUrls.length > 0
+          ? uploadedUrls.length === 1
+            ? "Проаналізуй це фото страви та запиши її в щоденник."
+            : `Проаналізуй ці ${uploadedUrls.length} фото страв та запиши їх у щоденник.`
+          : "");
 
-    await sendMessage(
-      {
-        text: messageText,
-        metadata:
-          uploadedUrls.length > 0
-            ? {
-                imageUrl: uploadedUrls.length === 1 ? uploadedUrls[0] : JSON.stringify(uploadedUrls),
-                imageUrls: uploadedUrls,
-              }
-            : undefined,
-      },
-      {
-        body: {
-          imageUrl: uploadedUrls[0],
-          imageUrls: uploadedUrls,
-          imageDataUrl: uploadedDataUrls[0],
-          imageDataUrls: uploadedDataUrls,
+      await sendMessage(
+        {
+          text: messageText,
+          metadata:
+            uploadedUrls.length > 0
+              ? {
+                  imageUrl: uploadedUrls.length === 1 ? uploadedUrls[0] : JSON.stringify(uploadedUrls),
+                  imageUrls: uploadedUrls,
+                }
+              : undefined,
         },
-      }
-    );
+        {
+          body: {
+            imageUrl: uploadedUrls[0],
+            imageUrls: uploadedUrls,
+            imageDataUrl: uploadedDataUrls[0],
+            imageDataUrls: uploadedDataUrls,
+          },
+        }
+      );
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Помилка надсилання повідомлення";
+      toast.error(msg);
+    } finally {
+      setOptimisticPending(null);
+    }
   };
 
   const handleResetChat = () => {
     setMessages([]);
     setSessionId(null);
     setMessageImages({});
+    setOptimisticPending(null);
   };
+
+  const hasMessages = messages.length > 0 || optimisticPending !== null;
 
   return (
     <aside
@@ -211,7 +237,7 @@ export function AIChatSidebar({ isOpen, onClose }: AIChatSidebarProps) {
 
       {/* Messages Body */}
       <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-4 text-sm">
-        {messages.length === 0 ? (
+        {!hasMessages ? (
           <div className="flex h-full flex-col items-center justify-center text-center px-4 space-y-4 text-muted-foreground my-auto">
             <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
               <Bot className="h-6 w-6" />
@@ -243,16 +269,31 @@ export function AIChatSidebar({ isOpen, onClose }: AIChatSidebarProps) {
             </div>
           </div>
         ) : (
-          messages.map((message) => (
-            <AIChatMessage
-              key={message.id}
-              message={message}
-              imageUrl={messageImages[message.id]}
-            />
-          ))
+          <>
+            {messages.map((message) => (
+              <AIChatMessage
+                key={message.id}
+                message={message}
+                imageUrl={messageImages[message.id]}
+              />
+            ))}
+
+            {optimisticPending && (
+              <AIChatMessage
+                message={
+                  {
+                    id: optimisticPending.id,
+                    role: "user",
+                    parts: [{ type: "text", text: optimisticPending.text }],
+                    metadata: { imageUrls: optimisticPending.imageUrls },
+                  } as unknown as UIMessage
+                }
+              />
+            )}
+          </>
         )}
 
-        {isGenerating && (
+        {(isGenerating || optimisticPending !== null) && (
           <div className="flex items-center gap-2 text-xs text-muted-foreground italic pl-9">
             <span className="flex gap-1 items-center">
               <span className="h-1.5 w-1.5 rounded-full bg-primary animate-bounce [animation-delay:-0.3s]" />
@@ -269,7 +310,7 @@ export function AIChatSidebar({ isOpen, onClose }: AIChatSidebarProps) {
       {/* Modular Chat Input */}
       <AIChatInput
         onSend={handleSend}
-        isGenerating={isGenerating}
+        isGenerating={isGenerating || optimisticPending !== null}
         onStop={stop}
       />
     </aside>

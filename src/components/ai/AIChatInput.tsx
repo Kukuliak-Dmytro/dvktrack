@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 const MAX_IMAGES = 5;
 
 interface AIChatInputProps {
-  onSend: (text: string, imageFiles: File[]) => Promise<void>;
+  onSend: (text: string, imageFiles: File[], previewUrls?: string[]) => Promise<void>;
   isGenerating: boolean;
   onStop: () => void;
   disabled?: boolean;
@@ -299,18 +299,19 @@ export function AIChatInput({
     setIsSubmitting(true);
     const textToSend = trimmed;
     const filesToSend = [...selectedImages];
+    const urlsToForward = [...previewUrls];
 
-    // Reset input fields immediately
+    // Reset input fields immediately so user can type next message
     setInput("");
-    previewUrls.forEach((url) => URL.revokeObjectURL(url));
     setSelectedImages([]);
     setPreviewUrls([]);
 
     try {
-      await onSend(textToSend, filesToSend);
+      await onSend(textToSend, filesToSend, urlsToForward);
     } catch {
       // Error handled by parent toast
     } finally {
+      urlsToForward.forEach((url) => URL.revokeObjectURL(url));
       setIsSubmitting(false);
     }
   };
