@@ -1,12 +1,13 @@
 "use client";
 
-import React from "react";
+import React, { useState, useMemo } from "react";
 import { type UIMessage, isToolUIPart } from "ai";
 import { Bot, User as UserIcon } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { AIThoughtBlock } from "./AIThoughtBlock";
 import { AIToolCard } from "./AIToolCard";
+import { ImageLightbox } from "./ImageLightbox";
 
 const markdownComponents = {
   table: ({ children }: { children?: React.ReactNode }) => (
@@ -71,11 +72,36 @@ interface AIChatMessageProps {
 
 export function AIChatMessage({ message, imageUrl }: AIChatMessageProps) {
   const isUser = message.role === "user";
-  const attachedImageUrl =
-    (message.metadata as { imageUrl?: string } | undefined)?.imageUrl ||
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+
+  const rawMetadata = message.metadata as { imageUrl?: string; imageUrls?: string[] } | undefined;
+  const rawImage =
+    rawMetadata?.imageUrl ||
     imageUrl ||
     (message as unknown as { imageUrl?: string }).imageUrl ||
     null;
+  const rawImagesList = rawMetadata?.imageUrls;
+
+  const resolvedImages: string[] = useMemo(() => {
+    if (Array.isArray(rawImagesList) && rawImagesList.length > 0) {
+      return rawImagesList.filter(Boolean);
+    }
+    if (typeof rawImage === "string" && rawImage.trim()) {
+      const trimmed = rawImage.trim();
+      if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+        try {
+          const parsed = JSON.parse(trimmed);
+          if (Array.isArray(parsed)) {
+            return parsed.filter((x): x is string => typeof x === "string");
+          }
+        } catch {
+          // ignore parsing error
+        }
+      }
+      return [trimmed];
+    }
+    return [];
+  }, [rawImagesList, rawImage]);
 
   return (
     <div className={`flex gap-2.5 ${isUser ? "justify-end" : "justify-start"}`}>
@@ -89,15 +115,33 @@ export function AIChatMessage({ message, imageUrl }: AIChatMessageProps) {
         className={`space-y-1.5 ${
           isUser ? "max-w-[85%] items-end" : "flex-1 min-w-0 items-start"
         }`}>
-        {/* Render attached image in user chat bubble */}
-        {isUser && attachedImageUrl && typeof attachedImageUrl === "string" && (
-          <div className="overflow-hidden rounded-2xl border border-primary/20 shadow-xs max-w-[240px] ml-auto mb-1">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={attachedImageUrl}
-              alt="Прикріплена страва"
-              className="h-auto w-full max-h-56 object-cover rounded-2xl"
-            />
+        {/* Render attached image(s) in user chat bubble */}
+        {isUser && resolvedImages.length > 0 && (
+          <div
+            className={`grid gap-1.5 ml-auto mb-1 max-w-[280px] ${
+              resolvedImages.length === 1
+                ? "grid-cols-1"
+                : resolvedImages.length === 2
+                ? "grid-cols-2"
+                : "grid-cols-3"
+            }`}>
+            {resolvedImages.map((imgUrl, idx) => (
+              <button
+                key={idx}
+                type="button"
+                onClick={() => setLightboxIndex(idx)}
+                className="group relative overflow-hidden rounded-xl border border-primary/20 shadow-xs focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-primary cursor-pointer hover:opacity-95 transition-opacity"
+                title="Відкрити зображення">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={imgUrl}
+                  alt={`Прикріплене фото ${idx + 1}`}
+                  className={`w-full object-cover transition-transform duration-200 group-hover:scale-105 ${
+                    resolvedImages.length === 1 ? "max-h-56 rounded-xl" : "h-20 rounded-lg"
+                  }`}
+                />
+              </button>
+            ))}
           </div>
         )}
 
@@ -206,6 +250,15 @@ export function AIChatMessage({ message, imageUrl }: AIChatMessageProps) {
         <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground mt-0.5">
           <UserIcon className="h-3.5 w-3.5" />
         </div>
+      )}
+
+      {/* Lightbox Modal */}
+      {lightboxIndex !== null && (
+        <ImageLightbox
+          images={resolvedImages}
+          initialIndex={lightboxIndex}
+          onClose={() => setLightboxIndex(null)}
+        />
       )}
     </div>
   );
