@@ -231,6 +231,142 @@ export function getAgentTools(userId: string, options?: { defaultImageUrl?: stri
         }
       },
     }),
+    create_dish: tool({
+      description:
+        "Створює нову страву (рецепт) зі списку інгредієнтів та фінальної ваги готової страви (cookedWeightGrams). Використовуй цей інструмент, коли користувач просить створити/зберегти страву, дає список інгредієнтів або вказує вагу готової страви.",
+      inputSchema: z.object({
+        name: z.string().describe("Назва страви"),
+        cookedWeightGrams: z
+          .number()
+          .describe("Фінальна вага готової страви в грамах після приготування"),
+        description: z
+          .string()
+          .optional()
+          .describe("Опис або спосіб приготування"),
+        servings: z.number().optional().default(1).describe("Кількість порцій"),
+        ingredients: z
+          .array(
+            z.object({
+              name: z.string().describe("Назва інгредієнта"),
+              quantityGrams: z.number().describe("Вага сирого інгредієнта в грамах"),
+              ingredientId: z.string().optional().describe("ID інгредієнта у базі якщо відомий"),
+            })
+          )
+          .min(1)
+          .describe("Список інгредієнтів страви з їхньою сирою вагою в грамах"),
+      }),
+      execute: async (args: {
+        name: string;
+        cookedWeightGrams: number;
+        description?: string;
+        servings?: number;
+        ingredients: Array<{
+          name: string;
+          quantityGrams: number;
+          ingredientId?: string;
+        }>;
+      }) => {
+        try {
+          const resolvedIngredients: Array<{
+            ingredientId: string;
+            quantityGrams: number;
+            name: string;
+          }> = [];
+
+          for (const item of args.ingredients) {
+            let matchedId = item.ingredientId;
+            if (!matchedId) {
+              const matched = await prisma.ingredient.findFirst({
+                where: {
+                  OR: [
+                    { name: { equals: item.name, mode: "insensitive" } },
+                    { name: { contains: item.name, mode: "insensitive" } },
+                  ],
+                  AND: [{ OR: [{ userId: null }, { userId }] }],
+                },
+              });
+              if (matched) {
+                matchedId = matched.id;
+              } else {
+                const newIng = await prisma.ingredient.create({
+                  data: {
+                    userId,
+                    name: item.name,
+                    caloriesPer100g: 100,
+                    proteinPer100g: 5,
+                    carbsPer100g: 15,
+                    fatPer100g: 2,
+                    fiberPer100g: 1,
+                    category: "Інше",
+                    isCustom: true,
+                  },
+                });
+                matchedId = newIng.id;
+              }
+            }
+
+            resolvedIngredients.push({
+              ingredientId: matchedId,
+              quantityGrams: item.quantityGrams,
+              name: item.name,
+            });
+          }
+
+          const recipe = await prisma.recipe.create({
+            data: {
+              userId,
+              name: args.name,
+              cookedWeightGrams: args.cookedWeightGrams,
+              description: args.description || null,
+              servings: args.servings ?? 1,
+              ingredients: {
+                create: resolvedIngredients.map((ing) => ({
+                  ingredientId: ing.ingredientId,
+                  quantityGrams: ing.quantityGrams,
+                })),
+              },
+            },
+            include: {
+              ingredients: {
+                include: {
+                  ingredient: true,
+                },
+              },
+            },
+          });
+
+          const totalNutrition = calculateRecipeNutritionData(recipe);
+          const per100g = calculateCookedNutritionPer100g(totalNutrition, args.cookedWeightGrams);
+          const totalRawWeight = resolvedIngredients.reduce((sum, i) => sum + i.quantityGrams, 0);
+
+          return {
+            id: recipe.id,
+            name: recipe.name,
+            cookedWeightGrams: args.cookedWeightGrams,
+            totalRawWeightGrams: totalRawWeight,
+            servings: recipe.servings,
+            ingredientsCount: resolvedIngredients.length,
+            nutritionPer100g: {
+              calories: Math.round(per100g.calories),
+              protein: Math.round(per100g.protein * 10) / 10,
+              fat: Math.round(per100g.fat * 10) / 10,
+              carbs: Math.round(per100g.carbs * 10) / 10,
+              fiber: Math.round(per100g.fiber * 10) / 10,
+            },
+            totalNutrition: {
+              calories: Math.round(totalNutrition.calories),
+              protein: Math.round(totalNutrition.protein * 10) / 10,
+              fat: Math.round(totalNutrition.fat * 10) / 10,
+              carbs: Math.round(totalNutrition.carbs * 10) / 10,
+              fiber: Math.round(totalNutrition.fiber * 10) / 10,
+            },
+          };
+        } catch (error) {
+          console.error("create_dish tool error:", error);
+          return { error: "Не вдалося створити страву" };
+        }
+      },
+    }),
 
     log_food_entry: tool({
       description: "Записує спожиту їжу користувача за обраний прийом та дату.",

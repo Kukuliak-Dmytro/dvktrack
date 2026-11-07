@@ -1,7 +1,18 @@
 "use client";
 
 import React from "react";
-import { CheckCircle2, Loader2, Search, PlusCircle, Trash2, Calendar, Utensils, BarChart3, Target } from "lucide-react";
+import {
+  CheckCircle2,
+  Loader2,
+  Search,
+  PlusCircle,
+  Trash2,
+  Calendar,
+  Utensils,
+  BarChart3,
+  Target,
+  ChefHat,
+} from "lucide-react";
 
 interface LoggedEntry {
   name: string;
@@ -49,6 +60,15 @@ interface LoggedResult {
   recipes?: unknown[];
   name?: string;
   deletedName?: string;
+  cookedWeightGrams?: number;
+  ingredientsCount?: number;
+  nutritionPer100g?: {
+    calories: number;
+    protein: number;
+    fat: number;
+    carbs: number;
+    fiber: number;
+  };
 }
 
 interface ToolInvocation {
@@ -155,6 +175,38 @@ export function AIToolCard({ tool }: { tool: ToolInvocation }) {
             ? `Створення інгредієнта: "${tool.args?.name || ""}"...`
             : `Створено новий інгредієнт: "${tool.result?.name || ""}"`}
         </span>
+      </div>
+    );
+  }
+
+  if (name === "create_dish") {
+    const res = tool.result;
+    return (
+      <div className="my-1.5 rounded-xl border border-primary/20 bg-primary/5 p-3 text-xs">
+        <div className="flex items-center gap-2 font-medium text-primary">
+          {isExecuting ? (
+            <Loader2 className="h-4 w-4 animate-spin text-primary" />
+          ) : (
+            <ChefHat className="h-4 w-4 text-primary" />
+          )}
+          <span>
+            {isExecuting
+              ? `Створення страви: "${tool.args?.name || ""}"...`
+              : `Створено нову страву: "${res?.name || tool.args?.name || ""}"`}
+          </span>
+        </div>
+        {!isExecuting && res && (
+          <div className="mt-1.5 pl-6 text-muted-foreground space-y-0.5">
+            <div>
+              Вага готової страви: <span className="font-medium text-foreground">{res.cookedWeightGrams}г</span> ({res.ingredientsCount || 0} інгр.)
+            </div>
+            {res.nutritionPer100g && (
+              <div className="text-[11px]">
+                На 100г: {res.nutritionPer100g.calories} ккал | Б: {res.nutritionPer100g.protein}г | Ж: {res.nutritionPer100g.fat}г | В: {res.nutritionPer100g.carbs}г | К: {res.nutritionPer100g.fiber}г
+              </div>
+            )}
+          </div>
+        )}
       </div>
     );
   }
