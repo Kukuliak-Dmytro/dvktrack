@@ -2,6 +2,7 @@ import React from "react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { useChatStore } from "@/stores/useChatStore";
 import { AIChatSidebar } from "../AIChatSidebar";
 
 function createOpenStreamController() {
@@ -27,9 +28,11 @@ describe("AIChatSidebar image send", () => {
 
   beforeEach(() => {
     vi.restoreAllMocks();
+    useChatStore.getState().resetChat();
   });
 
   afterEach(() => {
+    useChatStore.getState().resetChat();
     global.fetch = originalFetch;
   });
 
@@ -111,10 +114,17 @@ describe("AIChatSidebar image send", () => {
     const userBubbles = container.querySelectorAll(".justify-end");
     expect(userBubbles).toHaveLength(1);
     expect(screen.getAllByAltText("Прикріплене фото 1")).toHaveLength(1);
+    expect(useChatStore.getState().chatId).toBe("session-123");
+    expect(useChatStore.getState().attachments).toHaveLength(0);
 
-    // Cleanly close stream after assertion
+    // Cleanly close stream and confirm count stays 1
     openStream.enqueueSse({ type: "text-end", id: "text-1" });
     openStream.enqueueSse({ type: "finish", finishReason: "stop" });
     openStream.close();
+
+    await waitFor(() => {
+      expect(useChatStore.getState().isGenerating).toBe(false);
+    });
+    expect(container.querySelectorAll(".justify-end")).toHaveLength(1);
   });
 });

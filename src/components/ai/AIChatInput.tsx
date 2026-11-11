@@ -4,11 +4,10 @@ import React, { useRef, useEffect, useState, useCallback } from "react";
 import { Send, Square, Mic, Check, Loader2, Paperclip, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-
-const MAX_IMAGES = 5;
+import { MAX_CHAT_IMAGES, useChatStore } from "@/stores/useChatStore";
 
 interface AIChatInputProps {
-  onSend: (text: string, imageFiles: File[], previewUrls?: string[]) => Promise<void>;
+  onSend: (text: string) => Promise<void>;
   isGenerating: boolean;
   onStop: () => void;
   disabled?: boolean;
@@ -42,9 +41,9 @@ export function AIChatInput({
   const [isMultiLine, setIsMultiLine] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Multi-image attachment states
-  const [selectedImages, setSelectedImages] = useState<File[]>([]);
-  const [previewUrls, setPreviewUrls] = useState<string[]>([]);
+  const attachments = useChatStore((s) => s.attachments);
+  const addAttachments = useChatStore((s) => s.addAttachments);
+  const removeAttachment = useChatStore((s) => s.removeAttachment);
 
   // Voice recording states & refs
   const [isRecording, setIsRecording] = useState(false);
@@ -228,90 +227,35 @@ export function AIChatInput({
     }
   };
 
-  // Cleanup on unmount
+  // Cleanup media recording on unmount
   useEffect(() => {
     return () => {
       cleanupMediaRecording();
-      previewUrls.forEach((url) => URL.revokeObjectURL(url));
     };
-  }, [cleanupMediaRecording, previewUrls]);
-
-  const handleFiles = (incomingFiles: FileList | File[]) => {
-    const filesArray = Array.from(incomingFiles);
-    if (filesArray.length === 0) return;
-
-    const remainingSlots = MAX_IMAGES - selectedImages.length;
-    if (remainingSlots <= 0) {
-      toast.info(`Можна додати щонайбільше ${MAX_IMAGES} зображень.`);
-      return;
-    }
-
-    let filesToAdd = filesArray;
-    if (filesArray.length > remainingSlots) {
-      filesToAdd = filesArray.slice(0, remainingSlots);
-      toast.info(`Можна додати щонайбільше ${MAX_IMAGES} зображень. Додано перші ${remainingSlots}.`);
-    }
-
-    const validFiles: File[] = [];
-    const validUrls: string[] = [];
-
-    for (const file of filesToAdd) {
-      if (!file.type.startsWith("image/")) {
-        toast.error(`Файл "${file.name}" не є зображенням`);
-        continue;
-      }
-      if (file.size > 10 * 1024 * 1024) {
-        toast.error(`Зображення "${file.name}" занадто велике (макс. 10 МБ)`);
-        continue;
-      }
-      validFiles.push(file);
-      validUrls.push(URL.createObjectURL(file));
-    }
-
-    if (validFiles.length > 0) {
-      setSelectedImages((prev) => [...prev, ...validFiles]);
-      setPreviewUrls((prev) => [...prev, ...validUrls]);
-    }
-  };
+  }, [cleanupMediaRecording]);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
-      handleFiles(e.target.files);
+      addAttachments(e.target.files);
     }
     e.target.value = "";
   };
 
-  const handleRemoveImage = (indexToRemove: number) => {
-    const urlToRevoke = previewUrls[indexToRemove];
-    if (urlToRevoke) {
-      URL.revokeObjectURL(urlToRevoke);
-    }
-    setSelectedImages((prev) => prev.filter((_, idx) => idx !== indexToRemove));
-    setPreviewUrls((prev) => prev.filter((_, idx) => idx !== indexToRemove));
-  };
-
   const handleSubmit = async () => {
     const trimmed = input.trim();
-    if ((!trimmed && selectedImages.length === 0) || isGenerating || isTranscribing || isSubmitting || disabled) {
+    if ((!trimmed && attachments.length === 0) || isGenerating || isTranscribing || isSubmitting || disabled) {
       return;
     }
 
     setIsSubmitting(true);
     const textToSend = trimmed;
-    const filesToSend = [...selectedImages];
-    const urlsToForward = [...previewUrls];
-
-    // Reset input fields immediately so user can type next message
     setInput("");
-    setSelectedImages([]);
-    setPreviewUrls([]);
 
     try {
-      await onSend(textToSend, filesToSend, urlsToForward);
+      await onSend(textToSend);
     } catch {
-      // Error handled by parent toast
+      // Error handled by store toast
     } finally {
-      urlsToForward.forEach((url) => URL.revokeObjectURL(url));
       setIsSubmitting(false);
     }
   };
@@ -343,40 +287,38 @@ export function AIChatInput({
         }}
         className="flex flex-col gap-2">
         {/* Images attachments preview strip */}
-        {previewUrls.length > 0 && (
+        {attachments.length > 0 && (
           <div className="flex items-center gap-2 overflow-x-auto pb-1 max-w-full no-scrollbar">
-            {previewUrls.map((url, idx) => (
+            {attachments.map((att, idx) => (
               <div
-                key={url}
+                key={att.id}
                 className="relative inline-flex items-center gap-2 rounded-xl border border-border/60 bg-muted/40 p-1.5 pr-2.5 shadow-2xs animate-in fade-in duration-200 shrink-0">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={url}
+                  src={att.previewUrl}
                   alt={`Прев'ю ${idx + 1}`}
                   className="h-10 w-10 rounded-lg object-cover border border-border/50 shrink-0"
                 />
                 <div className="flex flex-col text-xs pr-1">
                   <span className="font-medium text-foreground truncate max-w-[90px] sm:max-w-[130px]">
-                    {selectedImages[idx]?.name || `Фото ${idx + 1}`}
+                    {att.file.name || `Фото ${idx + 1}`}
                   </span>
                   <span className="text-[10px] text-muted-foreground">
-                    {selectedImages[idx]
-                      ? `${(selectedImages[idx].size / 1024).toFixed(0)} KB`
-                      : "Готово"}
+                    {`${(att.file.size / 1024).toFixed(0)} KB`}
                   </span>
                 </div>
                 <button
                   type="button"
-                  onClick={() => handleRemoveImage(idx)}
+                  onClick={() => removeAttachment(att.id)}
                   className="flex h-5 w-5 items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer"
                   title="Видалити фото">
                   <X className="h-3 w-3" />
                 </button>
               </div>
             ))}
-            {previewUrls.length < MAX_IMAGES && (
+            {attachments.length < MAX_CHAT_IMAGES && (
               <span className="text-[11px] text-muted-foreground/70 shrink-0 px-1">
-                {previewUrls.length}/{MAX_IMAGES}
+                {attachments.length}/{MAX_CHAT_IMAGES}
               </span>
             )}
           </div>
@@ -450,7 +392,7 @@ export function AIChatInput({
               rows={1}
               disabled={disabled}
               placeholder={
-                previewUrls.length > 0
+                attachments.length > 0
                   ? "Опишіть страву або надішліть фото..."
                   : "«З'їв на обід 200г гречки та 150г філе...»"
               }
@@ -471,7 +413,7 @@ export function AIChatInput({
                   title="Зупинити генерацію">
                   <Square className="h-3 w-3 fill-current" />
                 </Button>
-              ) : input.trim().length > 0 || previewUrls.length > 0 ? (
+              ) : input.trim().length > 0 || attachments.length > 0 ? (
                 <Button
                   type="submit"
                   size="icon"
